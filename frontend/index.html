@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rizz.ai - your chat wingman</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="bg-layer" aria-hidden="true"></div>
+
+<div id="app">
+  <div id="authView" class="view active">
+    <div class="auth-wrap">
+      <div class="auth-card">
+        <div class="brand">
+          <h1 class="logo">rizz.ai</h1>
+          <p class="brand-sub">A calm writing room for dating replies.</p>
+        </div>
+
+        <div class="toggle">
+          <button id="loginTab" class="active">login</button>
+          <button id="registerTab">sign up</button>
+        </div>
+
+        <form id="authForm" autocomplete="off">
+          <div class="field">
+            <label for="email">email</label>
+            <input type="email" id="email" placeholder="you@example.com" required />
+          </div>
+          <div class="field">
+            <label for="password">password</label>
+            <input type="password" id="password" placeholder="password" required />
+          </div>
+          <p id="authError" class="error-text"></p>
+          <button type="submit" id="submitBtn" class="btn-primary">Continue</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div id="threadsView" class="view">
+    <div class="topbar">
+      <span class="topbar-logo">rizz.ai</span>
+      <button id="logoutBtn" class="btn-ghost-sm">logout</button>
+    </div>
+
+    <main class="page-content">
+      <div class="page-hd">
+        <div>
+          <h2 class="page-title">your chats</h2>
+          <p class="page-sub">Keep each conversation in its own lane.</p>
+        </div>
+        <button id="addThreadBtn" class="btn-add">+ new</button>
+      </div>
+
+      <div class="vibe-filters" id="vibeFilters" aria-label="Filter chats by vibe">
+        <button class="vibe-chip active" type="button" data-filter="all">all</button>
+        <button class="vibe-chip" type="button" data-filter="flirty">flirty</button>
+        <button class="vibe-chip" type="button" data-filter="casual">casual</button>
+        <button class="vibe-chip" type="button" data-filter="sweet">sweet</button>
+        <button class="vibe-chip" type="button" data-filter="funny">funny</button>
+        <button class="vibe-chip" type="button" data-filter="icebreaker">icebreaker</button>
+      </div>
+
+      <div id="threadsContainer" class="threads-container"></div>
+
+      <div class="thread-hint-card">
+        <span class="hint-kicker">Tip</span>
+        <p>Add a screenshot or a little context before generating. The best replies usually come from the smallest real detail.</p>
+      </div>
+    </main>
+
+    <div id="threadModal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <h3 class="modal-title">New chat</h3>
+        <p class="modal-sub">Give this conversation a private nickname.</p>
+        <div class="field">
+          <input type="text" id="nicknameInput" placeholder="e.g. Sarah from Hinge" maxlength="40" />
+        </div>
+        <div class="modal-foot">
+          <button class="btn-ghost-sm" id="cancelModalBtn">cancel</button>
+          <button id="createThreadBtn" class="btn-ok">Create</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="replyView" class="view">
+    <div class="topbar">
+      <button id="backBtn" class="btn-back">back</button>
+      <span id="replyPersonName" class="topbar-person">Chat</span>
+      <div class="topbar-spacer"></div>
+    </div>
+
+    <main class="reply-container">
+      <section class="history-panel">
+        <div class="history-head">
+          <div>
+            <div class="sec-label">history</div>
+            <p id="historyMeta" class="history-meta">chosen replies from this thread</p>
+          </div>
+        </div>
+        <div id="historyContainer" class="history-container"></div>
+      </section>
+
+      <section class="sec-card">
+        <div class="sec-label">screenshot</div>
+        <input type="file" id="imageInput" accept="image/*" style="display:none" />
+        <div class="upload-box" id="uploadBox">
+          <div class="upload-placeholder" id="uploadPlaceholder">
+            <span class="upload-text">Tap to upload screenshot</span>
+            <span class="upload-hint">jpg, png, or webp</span>
+          </div>
+          <div class="upload-preview hidden" id="uploadPreview">
+            <img id="previewImg" src="" alt="preview" />
+            <button class="remove-img" id="removeImgBtn" type="button">x</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="sec-card">
+        <div class="sec-label">context <span class="optional-tag">optional</span></div>
+        <textarea
+          id="contextInput"
+          placeholder="Add useful context, e.g. matched three days ago, the conversation slowed down after weekend plans."
+          rows="3"
+        ></textarea>
+      </section>
+
+      <section class="sec-card">
+        <div class="sec-label">tone</div>
+        <div class="tone-row">
+          <button class="tone-btn" data-tone="serious" data-desc="Calm, grounded, respectful">rational</button>
+          <button class="tone-btn" data-tone="dramatic" data-desc="Intense, emotional, cinematic">dramatic</button>
+          <button class="tone-btn" data-tone="empathetic" data-desc="Warm, understanding, caring">soft</button>
+          <button class="tone-btn" data-tone="funny" data-desc="Playful, light, witty">funny</button>
+          <button class="tone-btn" data-tone="sarcastic" data-desc="Sharp, teasing, bold">sarcastic</button>
+        </div>
+        <p id="toneDescription" class="tone-desc-text"></p>
+      </section>
+
+      <section class="sec-card">
+        <div class="sec-label">style</div>
+        <div class="style-chip-row">
+          <button class="style-chip" type="button" data-style="flirty">flirty</button>
+          <button class="style-chip" type="button" data-style="playful">playful</button>
+          <button class="style-chip" type="button" data-style="direct">direct</button>
+          <button class="style-chip" type="button" data-style="low effort">low effort</button>
+          <button class="style-chip" type="button" data-style="confident">confident</button>
+          <button class="style-chip" type="button" data-style="ask a question" data-style-group="question">ask a question</button>
+          <button class="style-chip" type="button" data-style="no question" data-style-group="question">no question</button>
+        </div>
+      </section>
+
+      <section class="sec-card">
+        <div class="slider-hd">
+          <div class="sec-label no-margin">intensity</div>
+          <span id="intensityValue" class="intensity-val">5 - balanced</span>
+        </div>
+        <div class="slider-hints">
+          <span>chill</span>
+          <span>bold</span>
+        </div>
+        <input type="range" id="intensitySlider" min="1" max="10" value="5" />
+      </section>
+
+      <button id="generateBtn" class="btn-cook" disabled>Generate replies</button>
+      <div id="repliesContainer" class="replies-container"></div>
+    </main>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
