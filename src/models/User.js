@@ -10,7 +10,26 @@ lowercase: true
 },
 password: {
 type: String,
-required: true
+default: null
+},
+provider: {
+type: String,
+enum: ["local", "google"],
+default: "local"
+},
+googleId: {
+type: String,
+index: true,
+sparse: true
+},
+name: {
+type: String,
+trim: true,
+default: ""
+},
+avatarUrl: {
+type: String,
+default: ""
 },
 createdAt: {
 type: Date,

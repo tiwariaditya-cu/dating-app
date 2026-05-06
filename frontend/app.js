@@ -1,4 +1,13 @@
-const API_BASE = "http://localhost:5000";
+const IS_FILE_PAGE = window.location.protocol === "file:";
+const DEV_API_BASE = "http://localhost:5000";
+const CONFIGURED_API_BASE = window.RIZZ_API_BASE || "";
+const LOCAL_FRONTEND_PORTS = new Set(["5500", "5173", "3000"]);
+const API_BASE = CONFIGURED_API_BASE || (IS_FILE_PAGE || LOCAL_FRONTEND_PORTS.has(window.location.port)
+  ? DEV_API_BASE
+  : window.location.origin);
+const MAX_UPLOAD_DIMENSION = 2200;
+const OPTIMIZE_UPLOAD_ABOVE_BYTES = 2 * 1024 * 1024;
+const OPTIMIZED_UPLOAD_QUALITY = 0.9;
 
 const views = {
   auth: document.getElementById("authView"),
@@ -13,16 +22,22 @@ const emailInput = document.getElementById("email");
 const passwordInput = document.getElementById("password");
 const submitBtn = document.getElementById("submitBtn");
 const authError = document.getElementById("authError");
+const googleSignInWrap = document.getElementById("googleSignInWrap");
+const googleFallbackBtn = document.getElementById("googleFallbackBtn");
+const googleStatus = document.getElementById("googleStatus");
 
 const threadsContainer = document.getElementById("threadsContainer");
-const vibeFilterButtons = document.querySelectorAll(".vibe-chip");
 const addThreadBtn = document.getElementById("addThreadBtn");
+const promoNewThreadBtn = document.getElementById("promoNewThreadBtn");
 const threadModal = document.getElementById("threadModal");
 const modalBackdrop = document.querySelector(".modal-backdrop");
 const cancelModalBtn = document.getElementById("cancelModalBtn");
 const nicknameInput = document.getElementById("nicknameInput");
 const createThreadBtn = document.getElementById("createThreadBtn");
 const logoutBtn = document.getElementById("logoutBtn");
+const totalThreadsStat = document.getElementById("totalThreadsStat");
+const activeThreadsStat = document.getElementById("activeThreadsStat");
+const latestThreadStat = document.getElementById("latestThreadStat");
 
 const backBtn = document.getElementById("backBtn");
 const replyPersonName = document.getElementById("replyPersonName");
@@ -37,6 +52,7 @@ const uploadPreview = document.getElementById("uploadPreview");
 const previewImg = document.getElementById("previewImg");
 const removeImgBtn = document.getElementById("removeImgBtn");
 const contextInput = document.getElementById("contextInput");
+const extraContextInput = document.getElementById("extraContextInput");
 const generateBtn = document.getElementById("generateBtn");
 const repliesContainer = document.getElementById("repliesContainer");
 const historyContainer = document.getElementById("historyContainer");
@@ -50,7 +66,7 @@ let base64Image = null;
 let selectedThreadId = null;
 let loadingTimers = [];
 let cachedThreads = [];
-let activeThreadFilter = "all";
+let googleClientId = "";
 
 const AV_GRADIENTS = [
   "linear-gradient(135deg,#E35D55,#FFB36C)",
@@ -75,6 +91,101 @@ function showError(msg) {
 
 function clearError() {
   authError.textContent = "";
+}
+
+function setGoogleStatus(message, isError = false) {
+  if (!googleStatus) return;
+  googleStatus.textContent = message || "";
+  googleStatus.classList.toggle("error", Boolean(isError));
+}
+
+function getGoogleOriginHint() {
+  const origin = window.location.origin;
+  const shortClientId = googleClientId ? `${googleClientId.slice(0, 12)}...${googleClientId.slice(-24)}` : "not loaded";
+  if (IS_FILE_PAGE) {
+    return "Open http://localhost:5000 to use Google sign-in. Google blocks sign-in from file pages.";
+  }
+
+  return `Google sign-in needs this exact origin in Google Cloud: ${origin}. Client: ${shortClientId}`;
+}
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(String(email || "").trim());
+}
+
+function getPasswordIssue(password) {
+  if (!password) return "Please enter your password.";
+  if (!isLogin && password.length < 8) return "Password needs at least 8 characters.";
+  if (!isLogin && (!/[A-Za-z]/.test(password) || !/\d/.test(password))) {
+    return "Password needs at least one letter and one number.";
+  }
+  return "";
+}
+
+async function readApiResponse(res) {
+  const contentType = res.headers.get("content-type") || "";
+
+  if (contentType.includes("application/json")) {
+    return res.json();
+  }
+
+  const text = await res.text();
+  return {
+    message: text || res.statusText || "Request failed.",
+  };
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => resolve(ev.target.result);
+    reader.onerror = () => reject(new Error("Could not read the selected image."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function loadImage(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("This image format could not be opened in the browser."));
+    img.src = dataUrl;
+  });
+}
+
+function canvasToBlob(canvas, type, quality) {
+  return new Promise((resolve) => {
+    canvas.toBlob(resolve, type, quality);
+  });
+}
+
+async function optimizeUploadImage(file) {
+  const dataUrl = await readFileAsDataUrl(file);
+  const img = await loadImage(dataUrl);
+  const largestSide = Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height);
+
+  if (file.size <= OPTIMIZE_UPLOAD_ABOVE_BYTES && largestSide <= MAX_UPLOAD_DIMENSION) {
+    return dataUrl;
+  }
+
+  const scale = Math.min(1, MAX_UPLOAD_DIMENSION / largestSide);
+  const width = Math.max(1, Math.round((img.naturalWidth || img.width) * scale));
+  const height = Math.max(1, Math.round((img.naturalHeight || img.height) * scale));
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+
+  canvas.width = width;
+  canvas.height = height;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(img, 0, 0, width, height);
+
+  const blob = await canvasToBlob(canvas, "image/jpeg", OPTIMIZED_UPLOAD_QUALITY);
+  if (!blob) {
+    return dataUrl;
+  }
+
+  return readFileAsDataUrl(blob);
 }
 
 function avatarColor(name) {
@@ -136,23 +247,6 @@ function getPromptText(msg) {
   return msg.extractedText || msg.userContext || "";
 }
 
-function getThreadVibe(thread) {
-  const raw = thread.vibe || thread.lastVibe || thread.lastTone || thread.tone || "";
-  const vibe = String(raw).toLowerCase();
-
-  if (vibe.includes("flirt")) return "flirty";
-  if (vibe.includes("funny") || vibe.includes("sarcastic")) return "funny";
-  if (vibe.includes("soft") || vibe.includes("empathetic") || vibe.includes("sweet")) return "sweet";
-  if (vibe.includes("ice")) return "icebreaker";
-  if (vibe.includes("casual") || vibe.includes("serious") || vibe.includes("rational")) return "casual";
-  return "";
-}
-
-function getVisibleThreads() {
-  if (activeThreadFilter === "all") return cachedThreads;
-  return cachedThreads.filter((thread) => getThreadVibe(thread) === activeThreadFilter);
-}
-
 function setGenerateLabel(text, loading = false) {
   generateBtn.textContent = text;
   generateBtn.classList.toggle("loading", loading);
@@ -161,6 +255,19 @@ function setGenerateLabel(text, loading = false) {
 function clearLoadingStages() {
   loadingTimers.forEach(clearTimeout);
   loadingTimers = [];
+}
+
+function clearComposer() {
+  base64Image = null;
+
+  if (contextInput) contextInput.value = "";
+  if (extraContextInput) extraContextInput.value = "";
+  if (imageInput) imageInput.value = "";
+  if (previewImg) previewImg.src = "";
+  uploadPlaceholder?.classList.remove("hidden");
+  uploadPreview?.classList.add("hidden");
+  repliesContainer.innerHTML = "";
+  checkReady();
 }
 
 function startLoadingStages(hasImage) {
@@ -225,6 +332,15 @@ function renderHistory(messages = []) {
   historyContainer.scrollTop = historyContainer.scrollHeight;
 }
 
+function renderThreadStats() {
+  const activeCount = cachedThreads.filter((thread) => thread.lastPreview || thread.lastMessageAt).length;
+  const latest = cachedThreads[0]?.lastActiveAt || cachedThreads[0]?.createdAt;
+
+  if (totalThreadsStat) totalThreadsStat.textContent = cachedThreads.length;
+  if (activeThreadsStat) activeThreadsStat.textContent = activeCount;
+  if (latestThreadStat) latestThreadStat.textContent = latest ? timeAgo(latest) : "new";
+}
+
 async function loadThreadHistory(threadId) {
   if (!historyContainer || !threadId) return;
 
@@ -242,7 +358,7 @@ async function loadThreadHistory(threadId) {
       return;
     }
 
-    const data = await res.json();
+    const data = await readApiResponse(res);
 
     if (!res.ok) {
       historyContainer.innerHTML = `<div class="history-empty">Could not load this thread's history.</div>`;
@@ -257,20 +373,13 @@ async function loadThreadHistory(threadId) {
 }
 
 function renderThreads() {
-  const threads = getVisibleThreads();
+  const threads = cachedThreads;
+  renderThreadStats();
 
   if (!cachedThreads.length) {
     threadsContainer.innerHTML = `
       <div class="threads-empty">
         <p>No chats yet. Add someone to start building replies with context.</p>
-      </div>`;
-    return;
-  }
-
-  if (!threads.length) {
-    threadsContainer.innerHTML = `
-      <div class="threads-empty">
-        <p>No chats match this filter yet.</p>
       </div>`;
     return;
   }
@@ -320,14 +429,17 @@ authForm.onsubmit = async (e) => {
   e.preventDefault();
   clearError();
 
-  const email = emailInput.value.trim();
+  const email = emailInput.value.trim().toLowerCase();
   const password = passwordInput.value;
-  if (!email || !password) {
-    showError("Please enter your email and password.");
+
+  if (!isValidEmail(email)) {
+    showError("Please enter a valid email address.");
     return;
   }
-  if (!isLogin && password.length < 6) {
-    showError("Password needs at least 6 characters.");
+
+  const passwordIssue = getPasswordIssue(password);
+  if (passwordIssue) {
+    showError(passwordIssue);
     return;
   }
 
@@ -340,7 +452,7 @@ authForm.onsubmit = async (e) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
     });
-    const data = await res.json();
+    const data = await readApiResponse(res);
 
     if (!res.ok) {
       showError(data.error || data.message || "Something went wrong.");
@@ -363,11 +475,95 @@ authForm.onsubmit = async (e) => {
   }
 };
 
+async function handleGoogleCredential(response) {
+  clearError();
+  setGoogleStatus("Signing in...");
+
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/google`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ credential: response.credential }),
+    });
+    const data = await readApiResponse(res);
+
+    if (!res.ok || !data.token) {
+      setGoogleStatus(data.error || data.message || "Google sign-in failed.", true);
+      return;
+    }
+
+    localStorage.setItem("token", data.token);
+    setGoogleStatus("");
+    loadThreads();
+    show(views.threads);
+  } catch {
+    setGoogleStatus("Google sign-in could not reach the server.", true);
+  }
+}
+
+async function initGoogleSignIn(attempt = 0) {
+  if (!googleSignInWrap) return;
+
+  try {
+    if (IS_FILE_PAGE) {
+      setGoogleStatus(getGoogleOriginHint(), true);
+      if (googleFallbackBtn) googleFallbackBtn.disabled = true;
+      return;
+    }
+
+    if (!googleClientId) {
+      const res = await fetch(`${API_BASE}/api/auth/google/config`);
+      const data = await readApiResponse(res);
+      googleClientId = data.clientId || "";
+    }
+
+    if (!googleClientId) {
+      setGoogleStatus("Add GOOGLE_CLIENT_ID in .env to enable Google sign-in.", true);
+      if (googleFallbackBtn) googleFallbackBtn.disabled = true;
+      return;
+    }
+
+    if (!window.google?.accounts?.id) {
+      if (attempt < 20) {
+        setTimeout(() => initGoogleSignIn(attempt + 1), 250);
+      }
+      return;
+    }
+
+    window.google.accounts.id.initialize({
+      client_id: googleClientId,
+      callback: handleGoogleCredential,
+      auto_select: false,
+      ux_mode: "popup",
+    });
+
+    googleSignInWrap.innerHTML = "";
+    window.google.accounts.id.renderButton(googleSignInWrap, {
+      theme: "outline",
+      size: "large",
+      shape: "pill",
+      text: "continue_with",
+      width: Math.min(336, googleSignInWrap.offsetWidth || 336),
+    });
+    setGoogleStatus(getGoogleOriginHint());
+  } catch {
+    setGoogleStatus("Google sign-in setup failed. Check that the server is running.", true);
+  }
+}
+
 logoutBtn.onclick = () => {
   localStorage.removeItem("token");
   show(views.auth);
   loginTab.onclick();
+  initGoogleSignIn();
 };
+
+if (googleFallbackBtn) {
+  googleFallbackBtn.onclick = () => {
+    setGoogleStatus("Loading Google sign-in...");
+    initGoogleSignIn();
+  };
+}
 
 async function loadThreads() {
   threadsContainer.innerHTML = [1, 2, 3].map(() => `
@@ -392,7 +588,7 @@ async function loadThreads() {
       return;
     }
 
-    const data = await res.json();
+    const data = await readApiResponse(res);
     cachedThreads = Array.isArray(data) ? data : (data.threads || []);
     renderThreads();
   } catch {
@@ -403,19 +599,14 @@ async function loadThreads() {
   }
 }
 
-vibeFilterButtons.forEach((btn) => {
-  btn.onclick = () => {
-    vibeFilterButtons.forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
-    activeThreadFilter = btn.dataset.filter || "all";
-    renderThreads();
-  };
-});
-
 addThreadBtn.onclick = () => {
   threadModal.classList.remove("hidden");
   nicknameInput.focus();
 };
+
+if (promoNewThreadBtn) {
+  promoNewThreadBtn.onclick = () => addThreadBtn.click();
+}
 
 function closeModal() {
   threadModal.classList.add("hidden");
@@ -461,6 +652,7 @@ function openThread(id, name) {
   toneButtons.forEach((b) => b.classList.remove("active"));
   styleChips.forEach((b) => b.classList.remove("active"));
   if (contextInput) contextInput.value = "";
+  if (extraContextInput) extraContextInput.value = "";
   if (toneDescription) toneDescription.textContent = "";
   repliesContainer.innerHTML = "";
   generateBtn.disabled = true;
@@ -485,19 +677,23 @@ uploadBox.onclick = () => {
   if (!base64Image) imageInput.click();
 };
 
-imageInput.onchange = () => {
+imageInput.onchange = async () => {
   const file = imageInput.files[0];
   if (!file) return;
 
-  const reader = new FileReader();
-  reader.onload = (ev) => {
-    base64Image = ev.target.result.split(",")[1];
-    previewImg.src = ev.target.result;
+  try {
+    const dataUrl = await optimizeUploadImage(file);
+    base64Image = dataUrl.split(",")[1];
+    previewImg.src = dataUrl;
     uploadPlaceholder.classList.add("hidden");
     uploadPreview.classList.remove("hidden");
     checkReady();
-  };
-  reader.readAsDataURL(file);
+  } catch (error) {
+    base64Image = null;
+    imageInput.value = "";
+    alert(error.message || "Could not read that image. Try a JPG, PNG, or WebP screenshot.");
+    checkReady();
+  }
 };
 
 removeImgBtn.onclick = (e) => {
@@ -554,9 +750,10 @@ intensitySlider.oninput = () => {
 };
 
 contextInput.oninput = () => checkReady();
+if (extraContextInput) extraContextInput.oninput = () => checkReady();
 
 function checkReady() {
-  const hasInput = base64Image || contextInput.value.trim();
+  const hasInput = base64Image || contextInput.value.trim() || extraContextInput?.value.trim();
   generateBtn.disabled = !(hasInput && selectedTone);
 }
 
@@ -576,7 +773,8 @@ generateBtn.onclick = async () => {
     };
 
     if (base64Image) body.image = base64Image;
-    if (contextInput.value.trim()) body.userContext = contextInput.value.trim();
+    if (contextInput.value.trim()) body.extractedText = contextInput.value.trim();
+    if (extraContextInput?.value.trim()) body.userContext = extraContextInput.value.trim();
 
     const res = await fetch(`${API_BASE}/api/generate`, {
       method: "POST",
@@ -593,7 +791,7 @@ generateBtn.onclick = async () => {
       return;
     }
 
-    const data = await res.json();
+    const data = await readApiResponse(res);
     if (!res.ok) {
       alert(data.error || data.message || "Generation failed.");
       return;
@@ -636,7 +834,7 @@ generateBtn.onclick = async () => {
           await loadThreadHistory(selectedThreadId);
         }
 
-        repliesContainer.innerHTML = "";
+        clearComposer();
 
         setTimeout(() => {
           btn.textContent = "copy";
@@ -665,4 +863,6 @@ document.addEventListener("keydown", (e) => {
 if (getToken()) {
   loadThreads();
   show(views.threads);
+} else {
+  initGoogleSignIn();
 }

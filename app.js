@@ -2,6 +2,7 @@ const dotenv = require("dotenv");
 
 dotenv.config();
 
+const path = require("path");
 const express = require("express");
 const cors = require("cors");
 const ocrRoutes = require("./src/routes/ocrRoutes");
@@ -16,16 +17,35 @@ const rateLimiter = require("./src/middleware/rateLimiter");
 
 // Initialize app
 const app = express();
+const JSON_BODY_LIMIT = process.env.JSON_BODY_LIMIT || "15mb";
+const configuredOrigins = (process.env.CORS_ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 // Connect DB
 connectDB();
 
 // Middleware
+const allowedOrigins = [
+  "http://localhost:5000",
+  "http://127.0.0.1:5000",
+  "http://localhost:5500",
+  "http://127.0.0.1:5500",
+  ...configuredOrigins,
+];
+
 app.use(cors({
-  origin: "http://127.0.0.1:5500"
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(null, false);
+  },
 }));
-app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: JSON_BODY_LIMIT }));
+app.use(express.urlencoded({ extended: true, limit: JSON_BODY_LIMIT }));
 app.use(rateLimiter);
 
 
@@ -35,10 +55,25 @@ app.use("/api/threads", threadRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api", ocrRoutes);
 app.use("/api", generateRoutes);
+app.use(express.static(path.join(__dirname, "frontend")));
 
 // Health check
 app.get("/health", (req, res) => {
 res.status(200).json({ status: "ok" });
+});
+
+app.use((err, req, res, next) => {
+if (err?.type === "entity.too.large") {
+return res.status(413).json({
+message: `Image upload is too large. Try a smaller screenshot or set JSON_BODY_LIMIT above ${JSON_BODY_LIMIT}.`,
+});
+}
+
+if (err instanceof SyntaxError && "body" in err) {
+return res.status(400).json({ message: "Request body is not valid JSON." });
+}
+
+return next(err);
 });
 
 // Start server

@@ -268,6 +268,16 @@ function getVisionErrorMessage(visionError) {
   return `${status}: ${message}`;
 }
 
+function getVisionRequestErrorInfo(error) {
+  const visionError = error?.response?.data?.error;
+
+  return {
+    status: visionError?.status || error?.code || "UNKNOWN_ERROR",
+    message: visionError?.message || error.message || "Unexpected OCR error.",
+    payload: error?.response?.data || null,
+  };
+}
+
 function logImageDiagnostics(metadata) {
   log.debug(
     "Normalized image payload:",
@@ -1004,12 +1014,27 @@ async function extractTextFromImage(base64Image, options = {}) {
 
     for (const variant of variants) {
       for (const featureType of OCR_FEATURE_PRIORITY) {
-        const extracted = await callVision(
-          variant.cleanedBase64,
-          featureType,
-          options.languageHints,
-          variant.label
-        );
+        if (variant.cleanedBase64.length > MAX_REQUEST_BASE64_CHARS) {
+          log.warn(
+            `Skipping ${variant.label}/${featureType}; base64 payload is too large (${variant.cleanedBase64.length} chars).`
+          );
+          continue;
+        }
+
+        let extracted;
+
+        try {
+          extracted = await callVision(
+            variant.cleanedBase64,
+            featureType,
+            options.languageHints,
+            variant.label
+          );
+        } catch (error) {
+          const errorInfo = getVisionRequestErrorInfo(error);
+          log.warn(`Vision OCR failed for ${variant.label}/${featureType} [${errorInfo.status}]: ${errorInfo.message}`);
+          continue;
+        }
 
         if (extracted.reason) {
           log.warn(`Vision OCR returned no usable text for ${variant.label}/${featureType}:`, extracted.reason);
@@ -1067,14 +1092,14 @@ async function extractTextFromImage(base64Image, options = {}) {
       rawExtractedText: bestCandidate.structured.rawText,
     };
   } catch (error) {
-    const visionError = error?.response?.data?.error;
-    const errorStatus = visionError?.status || error?.code || "UNKNOWN_ERROR";
-    const errorMessage = visionError?.message || error.message || "Unexpected OCR error.";
+    const errorInfo = getVisionRequestErrorInfo(error);
+    const errorStatus = errorInfo.status;
+    const errorMessage = errorInfo.message;
 
     log.error(`Vision API request failed [${errorStatus}]: ${errorMessage}`);
 
-    if (error?.response?.data) {
-      log.error("Vision API error payload:", JSON.stringify(error.response.data, null, 2));
+    if (errorInfo.payload) {
+      log.error("Vision API error payload:", JSON.stringify(errorInfo.payload, null, 2));
     }
 
     if (errorStatus === "INVALID_ARGUMENT") {

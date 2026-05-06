@@ -18,7 +18,8 @@
       <div class="auth-card">
         <div class="brand">
           <h1 class="logo">rizz.ai</h1>
-          <p class="brand-sub">A calm writing room for dating replies.</p>
+          <p class="brand-hook">Unsure what to reply and don't wanna fumble by saying something stupid?</p>
+          <p class="brand-sub">Don't worry, your chat buddy is here.</p>
         </div>
 
         <div class="toggle">
@@ -38,6 +39,12 @@
           <p id="authError" class="error-text"></p>
           <button type="submit" id="submitBtn" class="btn-primary">Continue</button>
         </form>
+
+        <div class="auth-divider"><span>or</span></div>
+        <div id="googleSignInWrap" class="google-signin-wrap">
+          <button id="googleFallbackBtn" class="btn-google" type="button">Continue with Google</button>
+        </div>
+        <p id="googleStatus" class="google-status"></p>
       </div>
     </div>
   </div>
@@ -57,13 +64,37 @@
         <button id="addThreadBtn" class="btn-add">+ new</button>
       </div>
 
-      <div class="vibe-filters" id="vibeFilters" aria-label="Filter chats by vibe">
-        <button class="vibe-chip active" type="button" data-filter="all">all</button>
-        <button class="vibe-chip" type="button" data-filter="flirty">flirty</button>
-        <button class="vibe-chip" type="button" data-filter="casual">casual</button>
-        <button class="vibe-chip" type="button" data-filter="sweet">sweet</button>
-        <button class="vibe-chip" type="button" data-filter="funny">funny</button>
-        <button class="vibe-chip" type="button" data-filter="icebreaker">icebreaker</button>
+      <section class="value-panel">
+        <div>
+          <span class="value-kicker">your chat buddy</span>
+          <h3>Reply with confidence when your brain goes blank.</h3>
+          <p>
+            Paste their latest message or upload a screenshot. rizz.ai reads the vibe,
+            remembers the context, and gives you replies that sound smooth, natural,
+            and actually like you.
+          </p>
+        </div>
+        <div class="value-points">
+          <span>Turns awkward pauses into easy replies</span>
+          <span>Matches your tone, from soft to funny</span>
+          <span>Keeps every crush, match, and chat organized</span>
+        </div>
+        <button id="promoNewThreadBtn" class="btn-value" type="button">Start a chat</button>
+      </section>
+
+      <div class="thread-stats" id="threadStats">
+        <div>
+          <span id="totalThreadsStat">0</span>
+          <small>chats</small>
+        </div>
+        <div>
+          <span id="activeThreadsStat">0</span>
+          <small>active</small>
+        </div>
+        <div>
+          <span id="latestThreadStat">new</span>
+          <small>latest</small>
+        </div>
       </div>
 
       <div id="threadsContainer" class="threads-container"></div>
@@ -108,8 +139,26 @@
         <div id="historyContainer" class="history-container"></div>
       </section>
 
-      <section class="sec-card">
-        <div class="sec-label">screenshot</div>
+      <section class="sec-card latest-message-card">
+        <div class="sec-label">paste their latest reply</div>
+        <textarea
+          id="contextInput"
+          placeholder="Paste the reply you got back here, then generate the next response."
+          rows="5"
+        ></textarea>
+      </section>
+
+      <section class="sec-card extra-context-card">
+        <div class="sec-label">context <span class="optional-tag">optional</span></div>
+        <textarea
+          id="extraContextInput"
+          placeholder="Add background, e.g. you matched yesterday, she mentioned exams, you want to keep it low effort."
+          rows="3"
+        ></textarea>
+      </section>
+
+      <section class="sec-card upload-card">
+        <div class="sec-label">screenshot <span class="optional-tag">optional</span></div>
         <input type="file" id="imageInput" accept="image/*" style="display:none" />
         <div class="upload-box" id="uploadBox">
           <div class="upload-placeholder" id="uploadPlaceholder">
@@ -121,15 +170,6 @@
             <button class="remove-img" id="removeImgBtn" type="button">x</button>
           </div>
         </div>
-      </section>
-
-      <section class="sec-card">
-        <div class="sec-label">context <span class="optional-tag">optional</span></div>
-        <textarea
-          id="contextInput"
-          placeholder="Add useful context, e.g. matched three days ago, the conversation slowed down after weekend plans."
-          rows="3"
-        ></textarea>
       </section>
 
       <section class="sec-card">
@@ -175,6 +215,7 @@
   </div>
 </div>
 
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="app.js"></script>
 </body>
 </html>
