@@ -82,6 +82,16 @@ exports.getGoogleConfig = (req, res) => {
   });
 };
 
+exports.getAuthStatus = (req, res) => {
+  return res.status(200).json({
+    googleConfigured: Boolean(process.env.GOOGLE_CLIENT_ID),
+    googleClientIdPrefix: process.env.GOOGLE_CLIENT_ID
+      ? process.env.GOOGLE_CLIENT_ID.slice(0, 24)
+      : "",
+    passwordAuthEnabled: PASSWORD_AUTH_ENABLED,
+  });
+};
+
 exports.register = async (req, res) => {
   try {
     if (!PASSWORD_AUTH_ENABLED) {

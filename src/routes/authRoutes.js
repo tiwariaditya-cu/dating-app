@@ -1,9 +1,10 @@
 const express = require("express");
 const router = express.Router();
 
-const { register, login, googleLogin, getGoogleConfig } = require("../controllers/authController");
+const { register, login, googleLogin, getGoogleConfig, getAuthStatus } = require("../controllers/authController");
 
 router.get("/google/config", getGoogleConfig);
+router.get("/status", getAuthStatus);
 
 // Register route
 router.post("/register", register);
