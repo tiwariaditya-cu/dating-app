@@ -2,6 +2,10 @@ const jwt = require("jsonwebtoken");
 
 const authMiddleware = (req, res, next) => {
   try {
+    if (!process.env.JWT_SECRET) {
+      return res.status(503).json({ message: "Server auth is not configured. Add JWT_SECRET." });
+    }
+
     const authHeader = req.headers.authorization;
 
     // Check if token exists

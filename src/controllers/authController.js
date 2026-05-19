@@ -11,6 +11,17 @@ function getGoogleClient() {
   return new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 }
 
+function getJwtSecret() {
+  if (!process.env.JWT_SECRET) {
+    const error = new Error("JWT_SECRET is not configured");
+    error.statusCode = 503;
+    error.publicMessage = "Server auth is not configured. Add JWT_SECRET.";
+    throw error;
+  }
+
+  return process.env.JWT_SECRET;
+}
+
 function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase();
 }
@@ -36,8 +47,17 @@ function getPasswordIssue(password) {
 }
 
 function signToken(user) {
-  return jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
+  return jwt.sign({ userId: user._id }, getJwtSecret(), {
     expiresIn: "7d",
+  });
+}
+
+function sendAuthError(res, error, fallbackMessage, fallbackStatus = 500) {
+  const status = error.statusCode || fallbackStatus;
+
+  return res.status(status).json({
+    message: error.publicMessage || fallbackMessage,
+    error: error.message,
   });
 }
 
@@ -95,7 +115,7 @@ exports.register = async (req, res) => {
 
     return sendAuthResponse(res, user, "Account created successfully");
   } catch (error) {
-    return res.status(500).json({ message: "Server error", error: error.message });
+    return sendAuthError(res, error, "Server error");
   }
 };
 
@@ -124,7 +144,7 @@ exports.login = async (req, res) => {
 
     return sendAuthResponse(res, user);
   } catch (error) {
-    return res.status(500).json({ message: "Server error", error: error.message });
+    return sendAuthError(res, error, "Server error");
   }
 };
 
@@ -167,13 +187,13 @@ exports.googleLogin = async (req, res) => {
         },
       },
       {
-        new: true,
+        returnDocument: "after",
         upsert: true,
       }
     );
 
     return sendAuthResponse(res, user, "Google login successful");
   } catch (error) {
-    return res.status(401).json({ message: "Google sign-in failed", error: error.message });
+    return sendAuthError(res, error, "Google sign-in failed", 401);
   }
 };

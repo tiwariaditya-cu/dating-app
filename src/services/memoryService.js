@@ -57,7 +57,7 @@ ${formatted}`;
  
     console.log("Memory compressed for thread:", threadId);
   } catch (error) {
-    console.error("Memory compression error:", error.message);
+    console.error("Memory compression error:", error.publicMessage || error.message);
   }
 }
  

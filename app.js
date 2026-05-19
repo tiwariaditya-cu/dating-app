@@ -10,6 +10,7 @@ const generateRoutes = require("./src/routes/generateRoutes");
 
 const threadRoutes = require("./src/routes/threadRoutes");
 const messageRoutes = require("./src/routes/messageRoutes");
+const dns = require("dns");
 
 const connectDB = require("./src/config/db");
 const authRoutes = require("./src/routes/authRoutes");
@@ -28,6 +29,10 @@ const configuredOrigins = [
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
+
+if (process.env.NODE_ENV !== "production") {
+  dns.setServers(["8.8.8.8", "1.1.1.1"]);
+}
 
 // Connect DB
 connectDB();
@@ -84,9 +89,8 @@ return next(err);
 
 // Start server
 const PORT = process.env.PORT || 5000;
+const HOST = process.env.HOST || "0.0.0.0";
 
-app.listen(PORT, () => {
-console.log(`Server running on port ${PORT}`);
+app.listen(PORT, HOST, () => {
+console.log(`Server running on ${HOST}:${PORT}`);
 });
-
-

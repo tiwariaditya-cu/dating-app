@@ -173,7 +173,7 @@ Return only this exact format:
 
     return generateValidReplies(prompt);
   } catch (error) {
-    console.error("LLM Error:", error.message);
+    console.error("LLM Error:", error.publicMessage || error.message);
     return FALLBACK_REPLIES;
   }
 }
