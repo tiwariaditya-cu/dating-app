@@ -15,6 +15,7 @@ const DEFAULT_LANGUAGE_HINTS = (process.env.OCR_LANGUAGE_HINTS || "")
 const OCR_FEATURE_PRIORITY = ["DOCUMENT_TEXT_DETECTION", "TEXT_DETECTION"];
 const OCR_MIN_SCORE = Number(process.env.OCR_MIN_SCORE || 45);
 const OCR_MIN_CONFIDENCE = Number(process.env.OCR_MIN_CONFIDENCE || 0.45);
+const OCR_EARLY_SUCCESS_SCORE = Number(process.env.OCR_EARLY_SUCCESS_SCORE || 180);
 const DAY_LINE_PATTERN =
   /^(monday|tuesday|wednesday|thursday|friday|saturday|sunday|today|yesterday)(?:\s+\d{1,2}:\d{2}\s*(am|pm)?)?$/i;
 const TIME_LINE_PATTERN = /^\d{1,2}:\d{2}\s*(am|pm)$/i;
@@ -551,7 +552,7 @@ function cleanExtractedText(text) {
 function normalizeForDeduplication(text) {
   return text
     .toLowerCase()
-    .replace(/[^\w\s]/g, "")
+    .replace(/[^\p{L}\p{N}\s]/gu, "")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -612,8 +613,8 @@ function mergeStructuredLines(lines, imageWidth) {
 }
 
 function isHeavyUiArtifact(line) {
-  const alphanumericCount = (line.match(/[a-z0-9]/gi) || []).length;
-  const symbolCount = (line.match(/[^a-z0-9\s]/gi) || []).length;
+  const alphanumericCount = (line.match(/[\p{L}\p{N}]/gu) || []).length;
+  const symbolCount = (line.match(/[^\p{L}\p{N}\s]/gu) || []).length;
 
   if (alphanumericCount === 0) {
     return true;
@@ -794,12 +795,13 @@ function structureCandidate(candidate) {
   const layoutText = buildLabeledTextFromLayout(candidate);
   const parserInput = layoutText.labeledText || rawText;
   const parsed = parseOCRToChat(parserInput);
+  const extractedText = parsed.cleanedText || rawText;
 
   return {
     rawText,
     messages: parsed.messages,
-    extractedText: parsed.cleanedText,
-    cleanedText: parsed.cleanedText,
+    extractedText,
+    cleanedText: extractedText,
     lastMessageFromThem: parsed.lastMessageFromThem,
     removedLineCount: layoutText.removedLineCount,
   };
@@ -807,12 +809,12 @@ function structureCandidate(candidate) {
 
 function getTextProfile(text) {
   const characters = text || "";
-  const alphanumericCount = (characters.match(/[A-Za-z0-9]/g) || []).length;
-  const letterCount = (characters.match(/[A-Za-z]/g) || []).length;
-  const digitCount = (characters.match(/[0-9]/g) || []).length;
-  const weirdSymbolCount = (characters.match(/[^A-Za-z0-9\s.,!?'"()\-:&/@]/g) || []).length;
+  const alphanumericCount = (characters.match(/[\p{L}\p{N}]/gu) || []).length;
+  const letterCount = (characters.match(/\p{L}/gu) || []).length;
+  const digitCount = (characters.match(/\p{N}/gu) || []).length;
+  const weirdSymbolCount = (characters.match(/[^\p{L}\p{N}\s.,!?'"()\-:&/@]/gu) || []).length;
   const words = characters.split(/\s+/).filter(Boolean);
-  const alphabeticWords = words.filter((word) => /[A-Za-z]{2,}/.test(word));
+  const alphabeticWords = words.filter((word) => /\p{L}{2,}/u.test(word));
 
   return {
     length: characters.length,
@@ -900,16 +902,44 @@ function chooseBestCandidate(candidates) {
   return successfulCandidates[0];
 }
 
+function buildOcrResultFromCandidate(candidate) {
+  return {
+    lastMessageFromThem: candidate.structured.lastMessageFromThem,
+    extractedText: candidate.structured.extractedText,
+    cleanedText: candidate.structured.cleanedText,
+    messages: candidate.structured.messages,
+    rawExtractedText: candidate.structured.rawText,
+  };
+}
+
 async function buildImageVariants(normalizedImage) {
-  const variants = [
-    {
-      label: "original",
-      cleanedBase64: normalizedImage.cleanedBase64,
-    },
-  ];
+  const variants = [];
 
   try {
     const metadata = await sharp(normalizedImage.buffer).metadata();
+    const normalizedBuffer = await sharp(normalizedImage.buffer)
+      .rotate()
+      .resize({
+        width: 1800,
+        height: 1800,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .jpeg({ quality: 82, mozjpeg: true })
+      .toBuffer();
+
+    variants.push({
+      label: "normalized",
+      cleanedBase64: normalizedBuffer.toString("base64"),
+    });
+
+    if (normalizedImage.cleanedBase64.length <= MAX_REQUEST_BASE64_CHARS) {
+      variants.push({
+        label: "original",
+        cleanedBase64: normalizedImage.cleanedBase64,
+      });
+    }
+
     const targetWidth =
       typeof metadata.width === "number" && metadata.width < 1800
         ? Math.min(metadata.width * 2, 2400)
@@ -943,6 +973,10 @@ async function buildImageVariants(normalizedImage) {
     });
   } catch (error) {
     log.warn("Image preprocessing failed. Continuing with original image only.", error.message);
+    variants.push({
+      label: "original",
+      cleanedBase64: normalizedImage.cleanedBase64,
+    });
   }
 
   return variants;
@@ -1027,7 +1061,7 @@ async function extractTextFromImage(base64Image, options = {}) {
           extracted = await callVision(
             variant.cleanedBase64,
             featureType,
-            options.languageHints,
+            options.languageHints || DEFAULT_LANGUAGE_HINTS,
             variant.label
           );
         } catch (error) {
@@ -1047,6 +1081,31 @@ async function extractTextFromImage(base64Image, options = {}) {
         }
 
         candidates.push(extracted);
+
+        const structured = structureCandidate(extracted);
+        const labeledMessageCount = structured.messages.filter((message) => message.speaker !== "unknown").length;
+        const score = scoreCandidateText(
+          structured.extractedText || structured.rawText,
+          extracted.confidence,
+          structured.messages.length,
+          labeledMessageCount
+        );
+
+        if (
+          score >= OCR_EARLY_SUCCESS_SCORE &&
+          isProbablyUsefulResult(structured, extracted.confidence)
+        ) {
+          log.debug(
+            `Selected early OCR result from ${variant.label}/${featureType}/${extracted.source}. Score=${score.toFixed(
+              1
+            )}, confidence=${typeof extracted.confidence === "number" ? extracted.confidence.toFixed(3) : "n/a"}`
+          );
+
+          return buildOcrResultFromCandidate({
+            ...extracted,
+            structured,
+          });
+        }
       }
     }
 
@@ -1084,13 +1143,7 @@ async function extractTextFromImage(base64Image, options = {}) {
       }, messageCount=${bestCandidate.structured.messages.length}`
     );
 
-    return {
-      lastMessageFromThem: bestCandidate.structured.lastMessageFromThem,
-      extractedText: bestCandidate.structured.extractedText,
-      cleanedText: bestCandidate.structured.cleanedText,
-      messages: bestCandidate.structured.messages,
-      rawExtractedText: bestCandidate.structured.rawText,
-    };
+    return buildOcrResultFromCandidate(bestCandidate);
   } catch (error) {
     const errorInfo = getVisionRequestErrorInfo(error);
     const errorStatus = errorInfo.status;

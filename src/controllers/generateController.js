@@ -70,16 +70,18 @@ exports.generateReplies = async (req, res) => {
     // STEP 2 — OCR
     // -------------------------------
     let finalExtractedText = normalizeExtractedText(extractedText);
+    let ocrWarning = "";
 
     if (image) {
       try {
         const ocrResult = await extractTextFromImage(image);
         finalExtractedText = normalizeExtractedText(ocrResult);
+        if (!finalExtractedText) {
+          ocrWarning = "Could not read enough text from the screenshot. Generated replies may be generic.";
+        }
       } catch (err) {
         console.error("OCR Error:", err.message);
-        return res.status(500).json({
-          message: "Failed to process image OCR",
-        });
+        ocrWarning = "Screenshot OCR failed. Generated replies may be generic.";
       }
     }
 
@@ -159,6 +161,7 @@ exports.generateReplies = async (req, res) => {
     return res.status(200).json({
       replies: generatedReplies,
       messageId: newMessage._id,
+      ocrWarning,
     });
 
   } catch (error) {

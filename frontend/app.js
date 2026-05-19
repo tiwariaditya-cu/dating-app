@@ -5,9 +5,9 @@ const LOCAL_FRONTEND_PORTS = new Set(["5500", "5173", "3000"]);
 const API_BASE = CONFIGURED_API_BASE || (IS_FILE_PAGE || LOCAL_FRONTEND_PORTS.has(window.location.port)
   ? DEV_API_BASE
   : window.location.origin);
-const MAX_UPLOAD_DIMENSION = 2200;
-const OPTIMIZE_UPLOAD_ABOVE_BYTES = 2 * 1024 * 1024;
-const OPTIMIZED_UPLOAD_QUALITY = 0.9;
+const MAX_UPLOAD_DIMENSION = 1600;
+const OPTIMIZE_UPLOAD_ABOVE_BYTES = 700 * 1024;
+const OPTIMIZED_UPLOAD_QUALITY = 0.72;
 
 const views = {
   auth: document.getElementById("authView"),
@@ -815,7 +815,11 @@ generateBtn.onclick = async () => {
       return;
     }
 
-    repliesContainer.innerHTML = replies.map((r, i) => `
+    const warningHtml = data.ocrWarning
+      ? `<div class="threads-empty">${escapeHtml(data.ocrWarning)}</div>`
+      : "";
+
+    repliesContainer.innerHTML = warningHtml + replies.map((r, i) => `
       <div class="reply-card">
         <div class="reply-num">option ${i + 1}</div>
         <span>${escapeHtml(r)}</span>

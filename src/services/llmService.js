@@ -1,10 +1,63 @@
 const { generateGeminiText } = require("./geminiService");
 
-const FALLBACK_REPLIES = [
+const FALLBACK_REPLIES_ENGLISH = [
   "damn okay, I was just busy",
   "nah I'm still interested, relax",
   "you panic fast huh",
 ];
+
+const FALLBACK_REPLIES_HINGLISH = [
+  "arre haan, bas thoda busy tha",
+  "nahi nahi, interest toh hai",
+  "tum itni jaldi panic kar leti ho",
+];
+
+const ROMAN_HINGLISH_WORDS = new Set([
+  "acha",
+  "accha",
+  "aaj",
+  "ab",
+  "are",
+  "arre",
+  "bas",
+  "bhi",
+  "bol",
+  "btw",
+  "chalo",
+  "dekh",
+  "hai",
+  "hain",
+  "haan",
+  "han",
+  "ho",
+  "hu",
+  "hun",
+  "kal",
+  "kya",
+  "kyu",
+  "kyun",
+  "mat",
+  "mera",
+  "meri",
+  "mere",
+  "nahi",
+  "nahin",
+  "nai",
+  "par",
+  "phir",
+  "rha",
+  "raha",
+  "rahi",
+  "tha",
+  "thi",
+  "the",
+  "thik",
+  "theek",
+  "toh",
+  "tum",
+  "tu",
+  "yaar",
+]);
 
 const FORBIDDEN_REPLY_PATTERNS = [
   /\bmy dear\b/i,
@@ -24,6 +77,8 @@ const STYLE_RULES = `STRICT STYLE RULES:
 - Make replies casual, confident, playful, flirty, and human.
 - Use contractions naturally.
 - Occasional lowercase is okay.
+- Match the language and script of the conversation. If the conversation is in English, reply in English. If it is Roman Hinglish, reply in natural Roman Hinglish. If it uses Hindi/Devanagari, Hindi or Hinglish is okay depending on the chat's vibe.
+- Do not translate a Hinglish conversation into formal English unless the user context asks for English.
 - Avoid poetic, formal, therapist-like, philosophical, AI-like, or roleplay-style wording.
 - Do not use: my dear, dramatic, pronouncements, indeed, quite, dearest, darling.
 - Do not overexplain.
@@ -59,9 +114,45 @@ function formatMessages(messages = []) {
     .join("\n");
 }
 
+function getLanguageProfile(text) {
+  const value = String(text || "").toLowerCase();
+  const devanagariCount = (value.match(/[\u0900-\u097F]/g) || []).length;
+  const words = value.match(/[a-z]+/g) || [];
+  const romanHinglishCount = words.filter((word) => ROMAN_HINGLISH_WORDS.has(word)).length;
+  const romanHinglishRatio = words.length ? romanHinglishCount / words.length : 0;
+
+  if (devanagariCount >= 4) {
+    return {
+      label: "Hindi or Hindi-English mix",
+      fallbackReplies: FALLBACK_REPLIES_HINGLISH,
+      instruction:
+        "The conversation includes Hindi/Devanagari. Reply in the same casual language mix. Keep it natural, not formal Hindi.",
+    };
+  }
+
+  if (romanHinglishCount >= 2 || romanHinglishRatio >= 0.18) {
+    return {
+      label: "Roman Hinglish",
+      fallbackReplies: FALLBACK_REPLIES_HINGLISH,
+      instruction:
+        "The conversation is Roman Hinglish. Reply in natural Roman Hinglish using simple words like haan, kya, nahi, yaar, toh where they fit. Do not switch to polished English.",
+    };
+  }
+
+  return {
+    label: "English",
+    fallbackReplies: FALLBACK_REPLIES_ENGLISH,
+    instruction: "The conversation is English. Reply in natural casual English.",
+  };
+}
+
 function parseReplies(text) {
   try {
-    const clean = String(text || "").replace(/```json|```/g, "").trim();
+    const clean = String(text || "")
+      .replace(/```json|```/g, "")
+      .trim()
+      .replace(/^[^{]*/, "")
+      .replace(/[^}]*$/, "");
     const parsed = JSON.parse(clean);
 
     if (
@@ -121,7 +212,7 @@ function validateReplies(replies) {
   return cleaned;
 }
 
-async function generateValidReplies(prompt) {
+async function generateValidReplies(prompt, fallbackReplies) {
   const text = await generateGeminiText(prompt);
   console.log("Gemini raw response:", text);
 
@@ -131,14 +222,14 @@ async function generateValidReplies(prompt) {
   const retryPrompt = `${prompt}
 
 Your previous output failed the JSON or style rules.
-Rewrite it now. Keep the replies shorter, more casual, and more like fast phone texting.
+Rewrite it now. Keep the replies shorter, more casual, and more like fast phone texting. Keep the same language/script as the conversation.
 Return only valid JSON:
 {"replies":["reply1","reply2","reply3"]}`;
 
   const retryText = await generateGeminiText(retryPrompt);
   console.log("Gemini retry raw response:", retryText);
 
-  return validateReplies(parseReplies(retryText)) || FALLBACK_REPLIES;
+  return validateReplies(parseReplies(retryText)) || fallbackReplies;
 }
 
 async function generateReplies({
@@ -150,8 +241,14 @@ async function generateReplies({
   intensity,
   replyStyles = [],
 }) {
+  let fallbackReplies = FALLBACK_REPLIES_ENGLISH;
+
   try {
     const formattedMessages = formatMessages(recentMessages);
+    const languageProfile = getLanguageProfile(
+      [threadSummary, formattedMessages, extractedText, userContext].filter(Boolean).join("\n")
+    );
+    fallbackReplies = languageProfile.fallbackReplies;
 
     const prompt = `You are generating realistic dating app replies.
 Always return exactly 3 replies as valid JSON - no extra text, no markdown, just the JSON.
@@ -163,6 +260,8 @@ RECENT MESSAGES: ${formattedMessages || "None"}
 NEW MESSAGE: ${extractedText || "None"}
 USER CONTEXT: ${userContext || "None provided"}
 STYLE DETAILS: ${replyStyles.length ? replyStyles.join(", ") : "None selected"}
+LANGUAGE PROFILE: ${languageProfile.label}
+LANGUAGE INSTRUCTION: ${languageProfile.instruction}
 
 INSTRUCTION: Generate 3 replies in a ${tone} tone.
 Intensity: ${intensity}/10. Where 1 = barely noticeable, 10 = extremely ${tone}.
@@ -171,10 +270,10 @@ Apply the selected style details naturally. If "low effort" is selected, keep it
 Return only this exact format:
 {"replies": ["reply1", "reply2", "reply3"]}`;
 
-    return generateValidReplies(prompt);
+    return generateValidReplies(prompt, languageProfile.fallbackReplies);
   } catch (error) {
     console.error("LLM Error:", error.publicMessage || error.message);
-    return FALLBACK_REPLIES;
+    return fallbackReplies;
   }
 }
 
