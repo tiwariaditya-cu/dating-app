@@ -23,16 +23,16 @@
         </div>
 
         <div class="google-auth-copy">
-          <h2>Log in with Google</h2>
-          <p>Your chats stay tied to your Google account, even after the app is hosted.</p>
+          <h2>Log in or sign up</h2>
+          <p>Use email and password, or continue with your Google account.</p>
         </div>
 
-        <div class="toggle hidden">
+        <div class="toggle">
           <button id="loginTab" class="active">login</button>
           <button id="registerTab">sign up</button>
         </div>
 
-        <form id="authForm" class="hidden" autocomplete="off">
+        <form id="authForm" autocomplete="off">
           <div class="field">
             <label for="email">email</label>
             <input type="email" id="email" placeholder="you@example.com" required />
@@ -44,6 +44,8 @@
           <p id="authError" class="error-text"></p>
           <button type="submit" id="submitBtn" class="btn-primary">Continue</button>
         </form>
+
+        <div class="auth-divider">or</div>
 
         <div id="googleSignInWrap" class="google-signin-wrap">
           <button id="googleFallbackBtn" class="btn-google" type="button">Continue with Google</button>
