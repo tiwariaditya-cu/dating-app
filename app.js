@@ -18,7 +18,13 @@ const rateLimiter = require("./src/middleware/rateLimiter");
 // Initialize app
 const app = express();
 const JSON_BODY_LIMIT = process.env.JSON_BODY_LIMIT || "15mb";
-const configuredOrigins = (process.env.CORS_ALLOWED_ORIGINS || "")
+const configuredOrigins = [
+  process.env.PUBLIC_APP_URL,
+  process.env.FRONTEND_URL,
+  process.env.CORS_ALLOWED_ORIGINS,
+]
+  .filter(Boolean)
+  .join(",")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
@@ -82,6 +88,5 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
 console.log(`Server running on port ${PORT}`);
 });
-
 
 

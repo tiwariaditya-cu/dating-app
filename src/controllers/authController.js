@@ -5,6 +5,7 @@ const jwt = require("jsonwebtoken");
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
 const MIN_PASSWORD_LENGTH = 8;
+const PASSWORD_AUTH_ENABLED = process.env.ALLOW_PASSWORD_AUTH === "true";
 
 function getGoogleClient() {
   return new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -62,6 +63,10 @@ exports.getGoogleConfig = (req, res) => {
 
 exports.register = async (req, res) => {
   try {
+    if (!PASSWORD_AUTH_ENABLED) {
+      return res.status(403).json({ message: "Password sign-up is disabled. Continue with Google." });
+    }
+
     const email = normalizeEmail(req.body.email);
     const { password } = req.body;
 
@@ -96,6 +101,10 @@ exports.register = async (req, res) => {
 
 exports.login = async (req, res) => {
   try {
+    if (!PASSWORD_AUTH_ENABLED) {
+      return res.status(403).json({ message: "Password login is disabled. Continue with Google." });
+    }
+
     const email = normalizeEmail(req.body.email);
     const { password } = req.body;
 

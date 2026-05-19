@@ -103,10 +103,10 @@ function getGoogleOriginHint() {
   const origin = window.location.origin;
   const shortClientId = googleClientId ? `${googleClientId.slice(0, 12)}...${googleClientId.slice(-24)}` : "not loaded";
   if (IS_FILE_PAGE) {
-    return "Open http://localhost:5000 to use Google sign-in. Google blocks sign-in from file pages.";
+    return "Open http://localhost:5000 instead. Google blocks sign-in from file pages.";
   }
 
-  return `Google sign-in needs this exact origin in Google Cloud: ${origin}. Client: ${shortClientId}`;
+  return `If Google blocks this, add this exact origin in Google Cloud: ${origin}. Client: ${shortClientId}`;
 }
 
 function isValidEmail(email) {
@@ -409,23 +409,28 @@ function renderThreads() {
   }).join("");
 }
 
-loginTab.onclick = () => {
-  isLogin = true;
-  submitBtn.textContent = "Continue";
-  loginTab.classList.add("active");
-  registerTab.classList.remove("active");
-  clearError();
-};
+if (loginTab) {
+  loginTab.onclick = () => {
+    isLogin = true;
+    if (submitBtn) submitBtn.textContent = "Continue";
+    loginTab.classList.add("active");
+    registerTab?.classList.remove("active");
+    clearError();
+  };
+}
 
-registerTab.onclick = () => {
-  isLogin = false;
-  submitBtn.textContent = "Create account";
-  registerTab.classList.add("active");
-  loginTab.classList.remove("active");
-  clearError();
-};
+if (registerTab) {
+  registerTab.onclick = () => {
+    isLogin = false;
+    if (submitBtn) submitBtn.textContent = "Create account";
+    registerTab.classList.add("active");
+    loginTab?.classList.remove("active");
+    clearError();
+  };
+}
 
-authForm.onsubmit = async (e) => {
+if (authForm) {
+  authForm.onsubmit = async (e) => {
   e.preventDefault();
   clearError();
 
@@ -473,7 +478,8 @@ authForm.onsubmit = async (e) => {
     submitBtn.textContent = isLogin ? "Continue" : "Create account";
     submitBtn.disabled = false;
   }
-};
+  };
+}
 
 async function handleGoogleCredential(response) {
   clearError();
@@ -514,6 +520,10 @@ async function initGoogleSignIn(attempt = 0) {
     if (!googleClientId) {
       const res = await fetch(`${API_BASE}/api/auth/google/config`);
       const data = await readApiResponse(res);
+      if (!res.ok) {
+        setGoogleStatus(data.message || "Could not load Google sign-in config.", true);
+        return;
+      }
       googleClientId = data.clientId || "";
     }
 
@@ -526,6 +536,8 @@ async function initGoogleSignIn(attempt = 0) {
     if (!window.google?.accounts?.id) {
       if (attempt < 20) {
         setTimeout(() => initGoogleSignIn(attempt + 1), 250);
+      } else {
+        setGoogleStatus("Google sign-in script did not load. Check your connection or browser settings.", true);
       }
       return;
     }
@@ -554,7 +566,7 @@ async function initGoogleSignIn(attempt = 0) {
 logoutBtn.onclick = () => {
   localStorage.removeItem("token");
   show(views.auth);
-  loginTab.onclick();
+  loginTab?.onclick?.();
   initGoogleSignIn();
 };
 
