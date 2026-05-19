@@ -5,7 +5,7 @@ const jwt = require("jsonwebtoken");
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
 const MIN_PASSWORD_LENGTH = 8;
-const PASSWORD_AUTH_ENABLED = process.env.ALLOW_PASSWORD_AUTH === "true";
+const PASSWORD_AUTH_ENABLED = process.env.ALLOW_PASSWORD_AUTH !== "false";
 
 function getGoogleClient() {
   return new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -78,6 +78,7 @@ function sendAuthResponse(res, user, message = "Login successful") {
 exports.getGoogleConfig = (req, res) => {
   return res.status(200).json({
     clientId: process.env.GOOGLE_CLIENT_ID || "",
+    passwordAuthEnabled: PASSWORD_AUTH_ENABLED,
   });
 };
 
